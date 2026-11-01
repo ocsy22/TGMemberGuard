@@ -1,0 +1,17 @@
+{
+  "source_id": -1001111111111,
+  "targets": [
+    {"id": -1002222222222, "name": "会员频道2"},
+    {"id": -1003333333333, "name": "会员频道3"},
+    {"id": -1004444444444, "name": "会员频道4"}
+  ],
+  "dry_run": true,
+  "token_file": "/etc/tgmemberguard/bot.token",
+  "proxy": "",
+  "admin_chat_ids": [],
+  "notify_types": ["join", "result", "list"],
+  "report_timezone": "Asia/Shanghai",
+  "daily_report": true,
+  "paused": false,
+  "web": {"enabled": true, "host": "127.0.0.1", "port": 8787, "secure_cookie": false, "behind_proxy": false}
+}

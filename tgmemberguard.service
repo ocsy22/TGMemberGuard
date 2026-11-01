@@ -1,0 +1,30 @@
+[Unit]
+Description=TGMemberGuard multi-channel membership enforcement
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=tgmemberguard
+Group=tgmemberguard
+WorkingDirectory=/opt/tgmemberguard
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONUTF8=1
+ExecStart=/opt/tgmemberguard/.venv/bin/python /opt/tgmemberguard/server.py run
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=180
+UMask=0077
+StateDirectory=tgmemberguard
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tgmemberguard
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
