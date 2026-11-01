@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TGMemberGuard 2.1.0: multi-channel enforcement, web management and reports."""
+"""TGMemberGuard 2.2.0: multi-channel enforcement, web management and reports."""
 import argparse
 from contextlib import contextmanager
 import getpass
@@ -22,7 +22,7 @@ try:
 except ImportError:
     from activity import Activity
 
-VERSION = '2.1.0'
+VERSION = '2.2.0'
 
 
 def chat_id(value):
@@ -34,12 +34,13 @@ def chat_id(value):
     return number
 
 
-def validate_config(raw):
+def validate_config(raw,allow_unconfigured=False):
     if not isinstance(raw, dict): raise ValueError('配置必须是 JSON 对象')
-    source = chat_id(raw['source_id'])
+    pending=raw.get('setup_pending') is True and allow_unconfigured
+    source = None if pending else chat_id(raw['source_id'])
     if not isinstance(raw.get('dry_run', True), bool): raise ValueError('dry_run 必须是 true 或 false')
     targets = raw.get('targets', [])
-    if not isinstance(targets, list) or not targets: raise ValueError('至少配置一个目标频道')
+    if not isinstance(targets, list) or (not targets and not pending): raise ValueError('至少配置一个目标频道')
     seen, rules = set(), []
     for target in targets:
         if not isinstance(target, dict): raise ValueError('targets 的每项必须为对象')
@@ -75,11 +76,22 @@ def validate_config(raw):
     return dict(source_id=source, dry_run=raw.get('dry_run', True), targets=rules, token_file=token_file, proxy=proxy,
         admin_chat_ids=list(dict.fromkeys(admins)), report_timezone=zone, notify_types=notify,
         daily_report=raw.get('daily_report',True),paused=raw.get('paused',False),
-        web=dict(host=host,port=port,enabled=web.get('enabled',True),secure_cookie=web.get('secure_cookie',False),behind_proxy=web.get('behind_proxy',False)))
+        setup_pending=pending,web=dict(host=host,port=port,enabled=web.get('enabled',True),secure_cookie=web.get('secure_cookie',False),behind_proxy=web.get('behind_proxy',False)))
 
 
-def read_config(path):
-    return validate_config(json.loads(Path(path).read_text(encoding='utf-8-sig')))
+def read_config(path,allow_unconfigured=False):
+    return validate_config(json.loads(Path(path).read_text(encoding='utf-8-sig')),allow_unconfigured)
+
+
+def ensure_runtime_config(config,data):
+    """A fresh service starts its web listener without any Telegram credentials."""
+    path=Path(data)/'runtime-config.json'
+    if not path.exists():
+        if Path(config).exists(): text=Path(config).read_text(encoding='utf-8-sig')
+        else: text=json.dumps(dict(setup_pending=True,targets=[],dry_run=True,
+                         token_file=str(Path(data)/'bot.token'),web=dict(host='127.0.0.1',port=8787,enabled=True)))
+        secure_write(path,text)
+    return path
 
 
 def read_token(cfg):
@@ -106,8 +118,8 @@ def secure_write(path, text):
         temp.unlink(missing_ok=True)
 
 
-def save_config(path, cfg):
-    validate_config(cfg)
+def save_config(path, cfg, allow_unconfigured=False):
+    validate_config(cfg,allow_unconfigured)
     secure_write(path, json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
 
 
@@ -414,7 +426,7 @@ def database_command(args, cfg, data):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='TGMemberGuard Ubuntu 服务器管理 2.1.0')
+    parser = argparse.ArgumentParser(description='TGMemberGuard Ubuntu 服务器管理 2.2.0')
     parser.add_argument('--config', default='/etc/tgmemberguard/config.json')
     parser.add_argument('--data-dir', default='/var/lib/tgmemberguard')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -456,7 +468,8 @@ def main(argv=None):
         save_config(config, cfg)
         print('配置已创建，默认为试运行。请运行 check 后启动服务。')
         return
-    cfg = read_config(config)
+    if args.command=='run': config=ensure_runtime_config(config,data)
+    cfg = read_config(config,allow_unconfigured=args.command in ('run','status','web-bind','check'))
     if args.command in ('target-add', 'target-remove', 'source-set', 'mode','web-bind'):
         # Keep unspecified per-target source inherited from the default when saved.
         raw = json.loads(config.read_text(encoding='utf-8'))
@@ -471,9 +484,12 @@ def main(argv=None):
         elif args.command=='web-bind':
             raw.setdefault('web',{}).update(host=args.host,port=args.port)
         else: raw['dry_run'] = args.value != 'live'
-        save_config(config, raw)
+        save_config(config, raw,allow_unconfigured=args.command=='web-bind')
         print('配置已保存；执行 sudo systemctl restart tgmemberguard 生效。名单数据保留。')
     elif args.command == 'check':
+        if cfg.get('setup_pending'):
+            print('尚未配置机器人，请打开 http://127.0.0.1:8787 在网页中完成配置。')
+            return 1
         api = API(dict(token=read_token(cfg), proxy=cfg['proxy']))
         failed = False
         for rule in cfg['targets']:
@@ -492,8 +508,6 @@ def main(argv=None):
             console = logging.StreamHandler()
             console.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
             log.addHandler(console)
-            if not runtime_config.exists():
-                secure_write(runtime_config,config.read_text(encoding='utf-8'))
             config=runtime_config
             shutdown=threading.Event()
             holder=[None]
@@ -502,7 +516,7 @@ def main(argv=None):
                 if holder[0]: holder[0].stop.set()
             for sig in (signal.SIGTERM,signal.SIGINT): signal.signal(sig,stop)
             web_server=None
-            cfg=read_config(config)
+            cfg=read_config(config,allow_unconfigured=True)
             if cfg['web']['enabled']:
                 try: from .webapp import create_app
                 except ImportError: from webapp import create_app
@@ -514,7 +528,12 @@ def main(argv=None):
             try:
                 while not shutdown.is_set():
                     snapshot=config.read_bytes()
-                    cfg=validate_config(json.loads(snapshot.decode('utf-8-sig')))
+                    cfg=validate_config(json.loads(snapshot.decode('utf-8-sig')),allow_unconfigured=True)
+                    if cfg.get('setup_pending'):
+                        atomic_json(data/'status.json',dict(version=VERSION,time=time.time(),pid=os.getpid(),
+                            state='等待网页配置',dry_run=True,setup_pending=True,targets=[]))
+                        shutdown.wait(1)
+                        continue
                     controller=Coordinator(cfg,read_token(cfg),data,log=log)
                     holder[0]=controller
                     controller.config_path=config

@@ -10,7 +10,7 @@ Ubuntu服务器上的Telegram多频道会员准入管理：账号密码网页后
 curl -fsSL https://raw.githubusercontent.com/ocsy22/TGMemberGuard/main/deploy.sh | sudo bash
 ```
 
-脚本交互填写Bot Token、来源及目标频道ID、后台账号密码；首次安装可选择正式审核或试运行。再次运行可升级，配置和名单保留。Token和密码只在服务器本机输入，不要提交到GitHub。必须停用使用同一Token的其他审核进程。
+安装全程无需填写任何项目参数。首次打开网页创建管理员账号，再在频道配置填写Bot Token、来源和多个目标频道ID；默认试运行，可在网页关闭试运行开始正式审核。再次运行可升级，配置和名单保留。Token和密码只在服务器本机输入，不要提交到GitHub。必须停用使用同一Token的其他审核进程。
 
 默认后台仅监听服务器127.0.0.1:8787，通过SSH隧道访问：
 
@@ -18,7 +18,14 @@ curl -fsSL https://raw.githubusercontent.com/ocsy22/TGMemberGuard/main/deploy.sh
 ssh -N -L 8787:127.0.0.1:8787 用户名@服务器IP
 ```
 
-电脑浏览器打开 http://127.0.0.1:8787 。无默认密码；忘记密码可 `sudo tgmemberguard web-init` 后重启服务。公网访问请按完整文档配置HTTPS反向代理。
+电脑浏览器打开 http://127.0.0.1:8787 。首次网页创建账号，无默认密码；忘记密码可 `sudo tgmemberguard web-init` 后重启服务。公网访问请按完整文档配置HTTPS反向代理。
+
+## 卸载
+
+```bash
+sudo tgmemberguard uninstall          # 保留配置和名单，重装可恢复
+sudo tgmemberguard uninstall --purge  # 输入 DELETE 后彻底删除配置和数据
+```
 
 ## 功能
 
@@ -42,7 +49,7 @@ ssh -N -L 8787:127.0.0.1:8787 用户名@服务器IP
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m unittest test_guard test_server test_activity_web -v
-bash -n deploy.sh install.sh tgmemberguard
+for script in deploy.sh install.sh uninstall.sh tgmemberguard; do bash -n "$script"; done
 ```
 
 测试使用虚构账号和Telegram接口替身，不连接真实机器人。Linux文件锁及Ubuntu平台测试由CI验证；真实Telegram入群、踢人、通知送达仍需部署后验收。

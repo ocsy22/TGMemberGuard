@@ -1,4 +1,4 @@
-# TGMemberGuard 2.1.0 · Ubuntu 网页管理、管理员通知与零点日报
+# TGMemberGuard 2.2.0 · Ubuntu 网页管理、管理员通知与零点日报
 
 ## 新增：网页后台和通知
 
@@ -10,13 +10,12 @@
 
 ```bash
 sudo bash install.sh
-sudo tgmemberguard web-init
-sudo systemctl start tgmemberguard
+
 ```
 
-安装器保留原配置、名单和队列。web-init交互创建后台账号（默认用户名可选admin，密码至少12位），没有预设密码。忘记密码时再次运行web-init并重启服务。密码保存为带随机盐的PBKDF2哈希；网页登录有CSRF防护、登录失败限速、会话失效和安全响应头。
+安装器保留原配置、名单和队列。首次打开网页创建后台账号（密码至少12位），没有预设密码。忘记密码时再次运行web-init并重启服务。密码保存为带随机盐的PBKDF2哈希；网页登录有CSRF防护、登录失败限速、会话失效和安全响应头。
 
-首次部署需要先完成下方 init 创建Bot配置，再执行web-init。同一个Token仍只能保留一台服务器/一个审核进程。
+首次部署无需终端填写任何参数。打开网页创建管理员账号，再在频道配置填写Bot Token、公共来源及多个目标频道ID；默认试运行。下文CLI init仅为可选的高级管理方式。同一个Token仍只能保留一台服务器/一个审核进程。
 
 ### 打开网页
 
@@ -26,7 +25,7 @@ sudo systemctl start tgmemberguard
 ssh -N -L 8787:127.0.0.1:8787 用户名@服务器IP
 ```
 
-保持该SSH窗口打开，在电脑浏览器访问 **http://127.0.0.1:8787**，用web-init创建的账号登录。关闭隧道只影响浏览器访问，服务器上的审核和日报继续运行。
+保持该SSH窗口打开，在电脑浏览器访问 **http://127.0.0.1:8787**，首次创建管理员账号，之后用该账号登录。关闭隧道只影响浏览器访问，服务器上的审核和日报继续运行。
 
 需要通过域名直接访问时，使用Nginx等HTTPS反向代理到127.0.0.1:8787，参考包内nginx.example.conf。配置好HTTPS后，在运行配置的web对象中设置 behind_proxy=true、secure_cookie=true，再完整重启服务。只能在后端端口仅由可信反向代理访问时启用behind_proxy。不要将明文HTTP密码后台直接暴露公网。
 
@@ -65,26 +64,18 @@ ssh -N -L 8787:127.0.0.1:8787 用户名@服务器IP
 
 先在 Windows 上停止原审核服务。同一个 Bot Token 不能同时由 Windows 和 Ubuntu 长轮询运行。
 
-上传 `TGMemberGuard-v2.1.0-Ubuntu.tar.gz` 到服务器，执行：
+上传 `TGMemberGuard-v2.2.0-Ubuntu.tar.gz` 到服务器，执行：
 
 ```bash
-tar -xzf TGMemberGuard-v2.1.0-Ubuntu.tar.gz
-cd TGMemberGuard-v2.1.0-Ubuntu
+tar -xzf TGMemberGuard-v2.2.0-Ubuntu.tar.gz
+cd TGMemberGuard-v2.2.0-Ubuntu
 sudo bash install.sh
-sudo tgmemberguard init
-sudo tgmemberguard check
-sudo tgmemberguard web-init
-sudo systemctl start tgmemberguard
+
 sudo systemctl status tgmemberguard --no-pager
 sudo journalctl -u tgmemberguard -f
 ```
 
-`init` 会询问 Token（输入不显示）、来源频道1 ID、多个目标频道ID。可一次填写频道2、3、4、5，空格或逗号分隔。只在服务器本机输入 Token，不要发到聊天。初始化默认试运行；先用会员和非会员测试日志，确认判断无误后切正式模式：
-
-```bash
-sudo tgmemberguard mode live
-sudo systemctl restart tgmemberguard
-```
+安装完成后直接打开网页创建账号，在“频道配置”填写Token、来源频道和多个目标频道。默认试运行，验证后在网页取消试运行并保存。所有项目配置均在后台完成，不需要终端输入。
 
 机器人在每个来源及目标频道中均需为管理员，目标频道还需要封禁/移除订阅者权限。普通群需升级为超级群；频道可直接使用。安装器已启用开机启动；异常退出由 systemd 重启，网络错误由程序重试。关闭SSH不影响运行。安装服务和出现 `active` 不代表已通过真实Telegram审核，仍须测试账号加入确认。
 
@@ -229,3 +220,13 @@ Telegram未消费的更新保留时间有限（约24小时），长期停机可�
 部署后可在包目录运行：`/opt/tgmemberguard/.venv/bin/python -m unittest test_guard test_server test_activity_web -v`。Linux上会额外执行文件锁测试。
 
 参考：[systemd服务和Restart配置](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)、[Telegram Bot API](https://core.telegram.org/bots/api)。
+
+## 一键部署与卸载
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ocsy22/TGMemberGuard/main/deploy.sh | sudo bash
+sudo tgmemberguard uninstall # 保留配置及名单
+sudo tgmemberguard uninstall --purge # 输入 DELETE 确认彻底删除
+```
+
+安装不询问任何项目配置；等待网页配置期间不会连接Telegram或踢人。首次账号创建仅接受本机/SSH隧道访问。已有安装升级不会覆盖账号和配置。卸载不会移除系统Python、Nginx或其他服务。自动化彻底删除可加 --yes；--dry-run 仅显示将删除的路径。

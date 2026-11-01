@@ -2,6 +2,7 @@
 # Public bootstrap. Usage: curl -fsSL RAW_URL | sudo bash -s -- [commit-or-ref]
 set -euo pipefail
 umask 077
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
 if [[ ${EUID} -ne 0 ]]; then
     echo '请使用 curl ... | sudo bash -s -- 执行部署。' >&2
     exit 1
@@ -36,28 +37,6 @@ if [[ ! -f "$WORK_DIR/source/install.sh" || ! -f "$WORK_DIR/source/server.py" ]]
     exit 1
 fi
 bash "$WORK_DIR/source/install.sh"
-FIRST_INSTALL=0
-if [[ ! -f /etc/tgmemberguard/config.json && ! -f /var/lib/tgmemberguard/runtime-config.json ]]; then
-    FIRST_INSTALL=1
-    if [[ ! -r /dev/tty ]]; then
-        echo '缺少交互终端。请通过SSH登录后运行：sudo tgmemberguard init && sudo tgmemberguard web-init' >&2
-        exit 1
-    fi
-    tgmemberguard init </dev/tty
-fi
-if [[ ! -s /var/lib/tgmemberguard/web-auth.json ]]; then
-    tgmemberguard web-init </dev/tty
-fi
-if [[ "$FIRST_INSTALL" -eq 1 ]]; then
-    printf '现在启用正式踢人审核？输入 y 确认，直接回车保持试运行 [y/N]：' >/dev/tty
-    read -r LIVE </dev/tty
-    if [[ "$LIVE" == y || "$LIVE" == Y ]]; then
-        tgmemberguard mode live
-    fi
-fi
-if ! tgmemberguard check; then
-    echo '部分Telegram权限或来源检查未通过。程序仍会启动并按保护规则重试，请在后台检查。' >&2
-fi
 systemctl restart tgmemberguard
 systemctl is-active --quiet tgmemberguard
 echo
@@ -67,3 +46,6 @@ echo '电脑访问：ssh -N -L 8787:127.0.0.1:8787 用户名@服务器IP'
 echo '然后在电脑浏览器打开：http://127.0.0.1:8787'
 echo '查看日志：sudo journalctl -u tgmemberguard -f'
 echo '管理员聊天ID：私聊机器人发送 /id，然后在网页“通知与日报”中填写。'
+echo '首次打开网页创建管理员账号，然后在频道配置填写Bot Token和频道ID。'
+echo '卸载（保留数据）：sudo tgmemberguard uninstall'
+echo '彻底删除：sudo tgmemberguard uninstall --purge'

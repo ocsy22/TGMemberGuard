@@ -5,6 +5,10 @@ if [[ ${EUID} -ne 0 ]]; then
     exit 1
 fi
 case "${1:-}" in
+    uninstall)
+        shift
+        exec /opt/tgmemberguard/uninstall.sh "$@"
+        ;;
     init|target-add|target-remove|source-set|mode|web-bind)
         exec /opt/tgmemberguard/.venv/bin/python /opt/tgmemberguard/server.py "$@"
         ;;

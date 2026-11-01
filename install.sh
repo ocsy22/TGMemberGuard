@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
 if [[ ${EUID} -ne 0 ]]; then
     echo '用法：sudo bash install.sh' >&2
     exit 1
@@ -9,7 +10,7 @@ if [[ ! -d /run/systemd/system ]]; then
     exit 1
 fi
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-for item in server.py guard.py activity.py webapp.py requirements.txt tgmemberguard tgmemberguard.service templates/login.html templates/dashboard.html static/app.js static/app.css; do
+for item in server.py guard.py activity.py webapp.py requirements.txt tgmemberguard tgmemberguard.service uninstall.sh templates/setup.html templates/login.html templates/dashboard.html static/app.js static/app.css; do
     [[ -f "$ROOT_DIR/$item" ]] || { echo "部署包缺少 $item" >&2; exit 1; }
 done
 apt-get update
@@ -39,13 +40,8 @@ python3 -m venv /opt/tgmemberguard/.venv
 /opt/tgmemberguard/.venv/bin/python -m pip install --disable-pip-version-check -r /opt/tgmemberguard/requirements.txt
 install -o root -g root -m 0755 "$ROOT_DIR/tgmemberguard" /usr/local/bin/tgmemberguard
 install -o root -g root -m 0644 "$ROOT_DIR/tgmemberguard.service" /etc/systemd/system/tgmemberguard.service
+install -o root -g root -m 0755 "$ROOT_DIR/uninstall.sh" /opt/tgmemberguard/uninstall.sh
 systemctl daemon-reload
 systemctl enable tgmemberguard.service
-echo '安装完成；配置和数据不会被覆盖。'
-echo '网页账号：sudo tgmemberguard web-init；默认监听127.0.0.1:8787。'
-if [[ -f /etc/tgmemberguard/config.json ]]; then
-    echo '已有配置：sudo tgmemberguard check，然后 sudo systemctl start tgmemberguard'
-else
-    echo '首次使用：sudo tgmemberguard init'
-    echo '然后：sudo tgmemberguard check && sudo systemctl start tgmemberguard'
-fi
+systemctl start tgmemberguard.service
+echo '安装完成；打开 http://127.0.0.1:8787 创建账号并配置机器人。已有配置及名单保留。'

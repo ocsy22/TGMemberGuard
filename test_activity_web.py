@@ -213,3 +213,80 @@ class WebTests(unittest.TestCase):
 
 
 if __name__=='__main__': unittest.main(verbosity=2)
+
+class FirstSetupTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory(); self.data=Path(self.temp.name)
+        self.path=server.ensure_runtime_config(self.data/'absent.json',self.data)
+        self.app=webapp.create_app(self.path,self.data); self.app.testing=True
+        self.client=self.app.test_client()
+    def tearDown(self): self.temp.cleanup()
+    def create_account(self):
+        self.client.get('/setup')
+        with self.client.session_transaction() as sess: csrf=sess['csrf']
+        return self.client.post('/setup',data=dict(csrf=csrf,username='demo',password='DemoGuardPass2026!',confirm='DemoGuardPass2026!'))
+    def test_empty_install_setup_and_configure(self):
+        self.assertTrue(server.read_config(self.path,True)['setup_pending'])
+        self.assertFalse((self.data/'bot.token').exists())
+        self.assertEqual(self.client.get('/').location,'/setup')
+        self.assertEqual(self.create_account().status_code,302)
+        state=self.client.get('/api/state').get_json()
+        self.assertTrue(state['config']['setup_pending'])
+        with self.client.session_transaction() as sess: csrf=sess['csrf']
+        payload=dict(revision=state['revision'],source_id=-1001,targets=[dict(id=-1002)],bot_token='123456:fake_test_token')
+        response=self.client.post('/api/config',json=payload,headers={'X-CSRF-Token':csrf})
+        self.assertEqual(response.status_code,200,response.data)
+        self.assertFalse(server.read_config(self.path)['setup_pending'])
+        self.assertEqual((self.data/'bot.token').read_text().strip(),payload['bot_token'])
+        state=self.client.get('/api/state')
+        self.assertNotIn(payload['bot_token'].encode(),state.data)
+        self.assertTrue(state.get_json()['config']['token_configured'])
+        self.assertEqual(self.client.post('/setup').status_code,409)
+    def test_setup_rejects_remote_and_foreign_host(self):
+        self.assertEqual(self.client.get('/setup',environ_base={'REMOTE_ADDR':'203.0.113.1'}).status_code,403)
+        self.assertEqual(self.client.get('/setup',base_url='http://evil.example').status_code,403)
+        self.assertEqual(self.client.post('/setup',data={'username':'attacker'}).status_code,403)
+        self.assertFalse((self.data/'web-auth.json').exists())
+    def test_reinstall_preserves_runtime_draft(self):
+        original=self.path.read_bytes()
+        self.create_account()
+        server.ensure_runtime_config(self.data/'absent.json',self.data)
+        self.assertEqual(self.path.read_bytes(),original)
+        self.assertTrue((self.data/'web-auth.json').exists())
+    def test_config_requires_token(self):
+        self.create_account(); state=self.client.get('/api/state').get_json()
+        with self.client.session_transaction() as sess: csrf=sess['csrf']
+        response=self.client.post('/api/config',json=dict(revision=state['revision'],source_id=-1001,targets=[dict(id=-1002)]),headers={'X-CSRF-Token':csrf})
+        self.assertEqual(response.status_code,400)
+        self.assertTrue(server.read_config(self.path,True)['setup_pending'])
+    @unittest.skipUnless(__import__('os').name=='posix','Linux service runtime')
+    def test_fresh_service_runs_without_token(self):
+        import socket,subprocess,sys,urllib.request
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
+        raw=json.loads(self.path.read_text()); raw['web']['port']=port
+        server.secure_write(self.path,json.dumps(raw))
+        process=subprocess.Popen([sys.executable,str(Path(server.__file__)), '--data-dir',str(self.data),'run'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(100):
+                self.assertIsNone(process.poll(),'fresh service exited before configuration')
+                try:
+                    with urllib.request.urlopen(f'http://127.0.0.1:{port}/',timeout=1) as response:
+                        self.assertTrue(response.url.endswith('/setup')); break
+                except OSError: time.sleep(.1)
+            else: self.fail('setup listener did not start')
+            self.assertFalse((self.data/'bot.token').exists())
+            self.assertEqual(json.loads((self.data/'status.json').read_text())['state'],'等待网页配置')
+        finally:
+            process.terminate(); process.wait(timeout=15)
+    @unittest.skipUnless(__import__('os').name=='posix','Linux shell')
+    def test_uninstall_dry_run_preserves_data_unless_purge(self):
+        import subprocess
+        script=str(Path(server.__file__).with_name('uninstall.sh'))
+        normal=subprocess.check_output(['bash',script,'--dry-run'],text=True)
+        purge=subprocess.check_output(['bash',script,'--purge','--yes','--dry-run'],text=True)
+        self.assertIn('/opt/tgmemberguard',normal)
+        self.assertNotIn('/var/lib/tgmemberguard',normal)
+        self.assertNotIn('/etc/tgmemberguard\n',normal)
+        self.assertIn('/var/lib/tgmemberguard',purge)
+        self.assertTrue(self.path.exists())

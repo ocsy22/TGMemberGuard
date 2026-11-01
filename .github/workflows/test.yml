@@ -21,4 +21,4 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -r requirements.txt
       - run: python -m unittest test_guard test_server test_activity_web -v
-      - run: bash -n deploy.sh install.sh tgmemberguard
+      - run: for script in deploy.sh install.sh uninstall.sh tgmemberguard; do bash -n "$script"; done

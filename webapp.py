@@ -4,6 +4,7 @@ import getpass
 import hashlib
 import hmac
 import io
+import ipaddress
 import json
 from pathlib import Path
 import re
@@ -12,6 +13,7 @@ import sqlite3
 import tarfile
 import threading
 import time
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 from flask import Flask,request,session,redirect,url_for,render_template,jsonify,send_file,abort
 from werkzeug.security import generate_password_hash,check_password_hash
@@ -47,7 +49,7 @@ def auth_version(auth): return hashlib.sha256(auth['password_hash'].encode()).he
 
 def create_app(config_path,data):
     config_path,data=Path(config_path),Path(data)
-    cfg=server.read_config(config_path)
+    cfg=server.read_config(config_path,allow_unconfigured=True)
     auth_path=data/'web-auth.json'
     def read_auth():
         if not auth_path.exists(): return None
@@ -76,11 +78,21 @@ def create_app(config_path,data):
         auth=read_auth()
         if request.endpoint=='static': return
         if not auth:
-            return '后台未初始化。请在服务器运行 sudo tgmemberguard web-init 后重启服务。',503
+            try:
+                address=ipaddress.ip_address(request.remote_addr or '')
+                local=address.is_loopback or bool(getattr(address,'ipv4_mapped',None) and address.ipv4_mapped.is_loopback)
+            except ValueError: local=False
+            if not local or urlsplit(request.host_url).hostname not in ('localhost','127.0.0.1','::1'):
+                return '首次初始化仅允许本机或SSH隧道访问 http://127.0.0.1:8787。',403
+            if request.endpoint not in ('setup','static'): return redirect(url_for('setup'))
+        elif request.endpoint=='setup':
+            if request.method=='POST': return jsonify(error='管理员已经创建，不能重新初始化'),409
+            return redirect(url_for('home'))
         if request.method=='POST':
             token=request.headers.get('X-CSRF-Token') or request.form.get('csrf','')
             if not hmac.compare_digest(str(session.get('csrf','missing')),str(token)):
                 return jsonify(error='请求校验失败，请刷新页面重试'),403
+        if not auth: return
         if request.endpoint!='login' and (session.get('user')!=auth['username'] or session.get('auth_version')!=auth_version(auth)):
             session.clear()
             if request.path.startswith('/api/'): return jsonify(error='请先登录'),401
@@ -98,6 +110,25 @@ def create_app(config_path,data):
 
     @app.errorhandler(ValueError)
     def value_error(error): return jsonify(error=str(error)),400
+
+    @app.route('/setup',methods=['GET','POST'])
+    def setup():
+        error=None
+        if request.method=='POST':
+            with edit_lock:
+                if read_auth(): return jsonify(error='初始化已完成，请登录'),409
+                username=request.form.get('username','').strip()
+                password=request.form.get('password','')
+                try:
+                    if password!=request.form.get('confirm',''): raise ValueError('两次密码不一致')
+                    write_auth(data,username,password)
+                except ValueError as e:
+                    return render_template('setup.html',error=str(e)),400
+                auth=read_auth(); app.secret_key=auth['secret']
+                session.clear(); session.permanent=True
+                session['user']=auth['username']; session['auth_version']=auth_version(auth); csrf()
+                return redirect(url_for('home'))
+        return render_template('setup.html',error=error)
 
     @app.route('/login',methods=['GET','POST'])
     def login():
@@ -132,9 +163,11 @@ def create_app(config_path,data):
 
     @app.get('/api/state')
     def state():
-        raw=json.loads(config_path.read_text(encoding='utf-8')); cfg=server.validate_config(raw)
+        raw=json.loads(config_path.read_text(encoding='utf-8')); cfg=server.validate_config(raw,allow_unconfigured=True)
         safe={key:cfg[key] for key in ('source_id','dry_run','paused','admin_chat_ids','report_timezone','daily_report','notify_types')}
         safe['targets']=raw['targets']; safe['proxy_configured']=bool(cfg['proxy'])
+        safe['setup_pending']=cfg.get('setup_pending',False)
+        safe['token_configured']=Path(cfg['token_file']).is_file()
         status={}
         try: status=json.loads((data/'status.json').read_text(encoding='utf-8'))
         except (OSError,ValueError): pass
@@ -165,6 +198,20 @@ def create_app(config_path,data):
                 if key in payload: raw[key]=payload[key]
             if payload.get('clear_proxy'): raw['proxy']=''
             elif payload.get('proxy'): raw['proxy']=payload['proxy']
+            raw.pop('setup_pending',None)
+            server.validate_config(raw)
+            token=payload.get('bot_token','')
+            if not isinstance(token,str): raise ValueError('Bot Token格式无效')
+            token=token.strip()
+            if token:
+                if ':' not in token or any(c.isspace() for c in token): raise ValueError('Bot Token格式无效')
+                token_path=data/'bot.token'
+                server.secure_write(token_path,token+'\n')
+                token_path.chmod(0o600)
+                raw['token_file']=str(token_path)
+                raw['token_revision']=secrets.token_hex(8)
+            elif not Path(raw.get('token_file','')).is_file():
+                raise ValueError('首次配置请填写 Bot Token')
             server.save_config(config_path,raw)
         return jsonify(ok=True,message='配置已保存，审核进程将在当前轮询完成后自动应用')
 
