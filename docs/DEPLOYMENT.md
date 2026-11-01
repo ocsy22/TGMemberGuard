@@ -1,4 +1,4 @@
-# TGMemberGuard 2.2.0 · Ubuntu 网页管理、管理员通知与零点日报
+# TGMemberGuard 2.3.0 · Ubuntu 网页管理、管理员通知与零点日报
 
 ## 新增：网页后台和通知
 
@@ -19,15 +19,11 @@ sudo bash install.sh
 
 ### 打开网页
 
-默认仅监听服务器的 `127.0.0.1:8787`。从自己的电脑通过SSH隧道访问，无需域名，也不需要开放后台端口：
+安装器自动监听 `0.0.0.0:8787`，可直接通过 `http://服务器IP:8787` 访问，不需要SSH隧道。若UFW已启用，自动允许后台TCP端口；云厂商安全组需允许该端口。
 
-```bash
-ssh -N -L 8787:127.0.0.1:8787 用户名@服务器IP
-```
+首次部署使用安装器显示的完整链接 `http://服务器IP:8787/setup?key=随机密钥` 创建管理员。只知道IP无法抢先创建账号。设置链接会先换成浏览器会话并清除地址栏中的密钥；创建账号后密钥删除，入口关闭，之后通过普通地址登录。重复安装保留账号、配置和名单；未完成设置前保留原设置链接。
 
-保持该SSH窗口打开，在电脑浏览器访问 **http://127.0.0.1:8787**，首次创建管理员账号，之后用该账号登录。关闭隧道只影响浏览器访问，服务器上的审核和日报继续运行。
-
-需要通过域名直接访问时，使用Nginx等HTTPS反向代理到127.0.0.1:8787，参考包内nginx.example.conf。配置好HTTPS后，在运行配置的web对象中设置 behind_proxy=true、secure_cookie=true，再完整重启服务。只能在后端端口仅由可信反向代理访问时启用behind_proxy。不要将明文HTTP密码后台直接暴露公网。
+用户已选择公网HTTP直连模式，HTTP不加密密码和Token。若需HTTPS，可配置Nginx反向代理，参考nginx.example.conf，再将后端改回127.0.0.1并配置secure_cookie与behind_proxy。首次设置链接仅供本人使用，不要公开。
 
 如确需调整监听地址/端口，可用 `sudo tgmemberguard web-bind 127.0.0.1 --port 8787` 后执行 `sudo systemctl restart tgmemberguard`。网页监听和Cookie选项需要完整重启；普通频道及通知配置可自动应用。
 
@@ -64,11 +60,11 @@ ssh -N -L 8787:127.0.0.1:8787 用户名@服务器IP
 
 先在 Windows 上停止原审核服务。同一个 Bot Token 不能同时由 Windows 和 Ubuntu 长轮询运行。
 
-上传 `TGMemberGuard-v2.2.0-Ubuntu.tar.gz` 到服务器，执行：
+上传 `TGMemberGuard-v2.3.0-Ubuntu.tar.gz` 到服务器，执行：
 
 ```bash
-tar -xzf TGMemberGuard-v2.2.0-Ubuntu.tar.gz
-cd TGMemberGuard-v2.2.0-Ubuntu
+tar -xzf TGMemberGuard-v2.3.0-Ubuntu.tar.gz
+cd TGMemberGuard-v2.3.0-Ubuntu
 sudo bash install.sh
 
 sudo systemctl status tgmemberguard --no-pager
@@ -229,4 +225,4 @@ sudo tgmemberguard uninstall # 保留配置及名单
 sudo tgmemberguard uninstall --purge # 输入 DELETE 确认彻底删除
 ```
 
-安装不询问任何项目配置；等待网页配置期间不会连接Telegram或踢人。首次账号创建仅接受本机/SSH隧道访问。已有安装升级不会覆盖账号和配置。卸载不会移除系统Python、Nginx或其他服务。自动化彻底删除可加 --yes；--dry-run 仅显示将删除的路径。
+安装不询问任何项目配置；等待网页配置期间不会连接Telegram或踢人。首次公网账号创建需要安装器显示的专属设置链接。已有安装升级不会覆盖账号和配置。卸载不会移除系统Python、Nginx或其他服务。自动化彻底删除可加 --yes；--dry-run 仅显示将删除的路径。

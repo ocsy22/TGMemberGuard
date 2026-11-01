@@ -51,5 +51,13 @@ install -o root -g root -m 0644 "$ROOT_DIR/tgmemberguard.service" /etc/systemd/s
 install -o root -g root -m 0755 "$ROOT_DIR/uninstall.sh" /opt/tgmemberguard/uninstall.sh
 systemctl daemon-reload
 systemctl enable tgmemberguard.service
+PUBLIC_INFO="$(cd /opt/tgmemberguard && runuser -u tgmemberguard -- .venv/bin/python -c 'import server; from pathlib import Path; port,key=server.enable_public(Path("/etc/tgmemberguard/config.json"),Path("/var/lib/tgmemberguard")); print(str(port)+("/setup?key="+key if key else "/"))')"
+if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
+    ufw allow "${PUBLIC_INFO%%/*}/tcp"
+fi
 systemctl start tgmemberguard.service
-echo '安装完成；打开 http://127.0.0.1:8787 创建账号并配置机器人。已有配置及名单保留。'
+PUBLIC_IP="$(curl -4fsS --connect-timeout 3 --max-time 6 https://api.ipify.org 2>/dev/null || true)"
+if [[ ! "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then PUBLIC_IP='服务器IP'; fi
+echo "后台访问链接：http://${PUBLIC_IP}:${PUBLIC_INFO}"
+echo '首次设置链接仅供自己使用；创建账号后自动失效。云安全组需允许后台TCP端口。' 
+echo '安装完成，使用上方链接进入后台。已有配置及名单保留。'

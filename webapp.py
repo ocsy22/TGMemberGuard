@@ -82,8 +82,16 @@ def create_app(config_path,data):
                 address=ipaddress.ip_address(request.remote_addr or '')
                 local=address.is_loopback or bool(getattr(address,'ipv4_mapped',None) and address.ipv4_mapped.is_loopback)
             except ValueError: local=False
-            if not local or urlsplit(request.host_url).hostname not in ('localhost','127.0.0.1','::1'):
-                return '首次初始化仅允许本机或SSH隧道访问 http://127.0.0.1:8787。',403
+            local=local and urlsplit(request.host_url).hostname in ('localhost','127.0.0.1','::1')
+            key_path=data/'setup.key'
+            supplied=request.args.get('key','')
+            expected=key_path.read_text().strip() if key_path.exists() else ''
+            if request.method=='GET' and supplied and expected and hmac.compare_digest(supplied.encode(),expected.encode()):
+                session['setup_access']=hashlib.sha256(expected.encode()).hexdigest()
+                return redirect(url_for('setup'))
+            granted=bool(expected) and session.get('setup_access')==hashlib.sha256(expected.encode()).hexdigest()
+            if not local and not granted:
+                return '请使用安装完成时显示的首次设置完整链接创建管理员账号。',403
             if request.endpoint not in ('setup','static'): return redirect(url_for('setup'))
         elif request.endpoint=='setup':
             if request.method=='POST': return jsonify(error='管理员已经创建，不能重新初始化'),409
@@ -124,6 +132,7 @@ def create_app(config_path,data):
                     write_auth(data,username,password)
                 except ValueError as e:
                     return render_template('setup.html',error=str(e)),400
+                (data/'setup.key').unlink(missing_ok=True)
                 auth=read_auth(); app.secret_key=auth['secret']
                 session.clear(); session.permanent=True
                 session['user']=auth['username']; session['auth_version']=auth_version(auth); csrf()

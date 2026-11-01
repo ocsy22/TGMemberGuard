@@ -6,6 +6,7 @@ __pycache__/
 .env.*
 bot.token
 web-auth.json
+setup.key
 runtime-config.json
 config.json
 *.sqlite3*

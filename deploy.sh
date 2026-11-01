@@ -41,9 +41,7 @@ systemctl restart tgmemberguard
 systemctl is-active --quiet tgmemberguard
 echo
 echo '部署完成，服务已启动并设为开机自启。'
-echo '网页默认地址：http://127.0.0.1:8787 （服务器本机）'
-echo '电脑访问：ssh -N -L 8787:127.0.0.1:8787 用户名@服务器IP'
-echo '然后在电脑浏览器打开：http://127.0.0.1:8787'
+echo '使用上方显示的服务器IP后台链接访问，无需SSH隧道。'
 echo '查看日志：sudo journalctl -u tgmemberguard -f'
 echo '管理员聊天ID：私聊机器人发送 /id，然后在网页“通知与日报”中填写。'
 echo '首次打开网页创建管理员账号，然后在频道配置填写Bot Token和频道ID。'

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TGMemberGuard 2.2.0: multi-channel enforcement, web management and reports."""
+"""TGMemberGuard 2.3.0: multi-channel enforcement, web management and reports."""
 import argparse
 from contextlib import contextmanager
 import getpass
@@ -22,7 +22,7 @@ try:
 except ImportError:
     from activity import Activity
 
-VERSION = '2.2.0'
+VERSION = '2.3.0'
 
 
 def chat_id(value):
@@ -92,6 +92,25 @@ def ensure_runtime_config(config,data):
                          token_file=str(Path(data)/'bot.token'),web=dict(host='127.0.0.1',port=8787,enabled=True)))
         secure_write(path,text)
     return path
+
+
+def enable_public(config,data):
+    """Prepare user-authorized direct access with a private first-account link."""
+    import secrets
+    data=Path(data)
+    data.mkdir(parents=True,exist_ok=True)
+    path=ensure_runtime_config(config,data)
+    raw=json.loads(path.read_text(encoding='utf-8'))
+    raw.setdefault('web',{}).update(host='0.0.0.0',enabled=True)
+    save_config(path,raw,allow_unconfigured=True)
+    key=''
+    if not (data/'web-auth.json').exists():
+        key_path=data/'setup.key'
+        if not key_path.exists():
+            secure_write(key_path,secrets.token_urlsafe(32))
+            key_path.chmod(0o600)
+        key=key_path.read_text().strip()
+    return raw['web'].get('port',8787),key
 
 
 def read_token(cfg):
@@ -426,7 +445,7 @@ def database_command(args, cfg, data):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='TGMemberGuard Ubuntu 服务器管理 2.2.0')
+    parser = argparse.ArgumentParser(description='TGMemberGuard Ubuntu 服务器管理 2.3.0')
     parser.add_argument('--config', default='/etc/tgmemberguard/config.json')
     parser.add_argument('--data-dir', default='/var/lib/tgmemberguard')
     sub = parser.add_subparsers(dest='command', required=True)
