@@ -38,6 +38,14 @@ for item in README.md config.example.json; do
 done
 python3 -m venv /opt/tgmemberguard/.venv
 /opt/tgmemberguard/.venv/bin/python -m pip install --disable-pip-version-check -r /opt/tgmemberguard/requirements.txt
+# deploy.sh uses umask 077. The root-owned environment contains code, not
+# credentials, and must be readable/traversable by the service account.
+# Also repairs environments created by earlier installers with that umask.
+chmod -R a+rX -- /opt/tgmemberguard/.venv
+(
+    cd /opt/tgmemberguard
+    runuser -u tgmemberguard -- /opt/tgmemberguard/.venv/bin/python -c 'import server, activity, webapp, waitress'
+)
 install -o root -g root -m 0755 "$ROOT_DIR/tgmemberguard" /usr/local/bin/tgmemberguard
 install -o root -g root -m 0644 "$ROOT_DIR/tgmemberguard.service" /etc/systemd/system/tgmemberguard.service
 install -o root -g root -m 0755 "$ROOT_DIR/uninstall.sh" /opt/tgmemberguard/uninstall.sh
